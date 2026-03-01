@@ -1,0 +1,70 @@
+# RuneAgents Configuration
+# Edit this file to change agents, buildings, and commands without recompiling.
+
+[meta]
+version = "0.1.0"
+project_name = "My Project"
+
+# ─── Agents ───
+# Each agent is a character in the village that can be sent to buildings.
+
+[agents.merlin]
+name = "Merlin"
+role = "Code Architect"
+sprite = "wizard"
+home = { x = 6, y = 9 }
+
+# ─── Buildings ───
+# Each building represents a task type. The command runs when an agent arrives.
+
+[buildings.forge]
+name = "The Forge"
+description = "Compile & Refactor"
+emoji = "⚒️"
+position = { x = 3, y = 4 }
+door = { x = 4, y = 6 }
+command = "echo"
+args = ["Forge task complete — refactored 3 files"]
+cwd = "."
+
+[buildings.library]
+name = "The Library"
+description = "Documentation"
+emoji = "📚"
+position = { x = 9, y = 4 }
+door = { x = 8, y = 6 }
+command = "echo"
+args = ["Library task complete — docs generated"]
+cwd = "."
+
+[buildings.tower]
+name = "The Tower"
+description = "Testing & QA"
+emoji = "🔮"
+position = { x = 3, y = 10 }
+door = { x = 4, y = 10 }
+command = "echo"
+args = ["Tower task complete — 17 tests passing"]
+cwd = "."
+
+[buildings.tavern]
+name = "The Tavern"
+description = "Deploy & Ship"
+emoji = "🍺"
+position = { x = 9, y = 10 }
+door = { x = 8, y = 10 }
+command = "echo"
+args = ["Tavern task complete — deployed to production"]
+cwd = "."
+
+# ─── Example: Real Claude Code commands (uncomment when ready) ───
+#
+# [buildings.forge]
+# command = "claude"
+# args = ["code", "--project", "./src", "Refactor duplicated utility functions"]
+# cwd = "/home/user/my-project"
+#
+# [buildings.library]
+# command = "claude"
+# args = ["code", "--project", "./src", "Generate JSDoc for all exported functions"]
+# cwd = "/home/user/my-project"
