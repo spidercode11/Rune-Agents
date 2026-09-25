@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* ─── RuneAgents OSRS Theme Tokens ─── */
+:root {
+  /* Panel colors */
+  --panel-bg: #3B3024;
+  --panel-bg-dark: #1a1208;
+  --panel-border: #5C4A32;
+  --panel-highlight: #8B7355;
+
+  /* Text colors */
+  --text-primary: #FF981F;
+  --text-secondary: #AAAA00;
+  --text-system: #5555FF;
+  --text-success: #00FF00;
+  --text-error: #FF4444;
+  --text-action: #00CCFF;
+  --text-muted: #888888;
+  --text-gold: #FFD700;
+
+  /* Fonts */
+  --font-pixel: "Press Start 2P", "Silkscreen", monospace;
+  --font-body: "Courier New", "Consolas", monospace;
+
+  /* Misc */
+  --status-online: #00AA00;
+}
+
+/* ─── Reset ─── */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #000;
+  overflow: hidden;
+  font-family: var(--font-body);
+  color: #ccc;
+  user-select: none;
+}
+
+.app-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ─── Scrollbar (OSRS style) ─── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--panel-bg-dark);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--panel-border);
+  border-radius: 3px;
+}
