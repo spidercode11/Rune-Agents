@@ -1,243 +1,113 @@
-import { useEffect, useRef } from "react";
-import { Application } from "pixi.js";
-import { TILE_W, TILE_H, AGENT_SPEED } from "./constants";
-import { toScreen, findPath, createTerrainGrid, computeWallTiles } from "./map";
-import { createTileGrid, createTileHighlight, updateTileHighlight } from "./map/tileRenderer";
-import { AgentEntity } from "./entities/Agent";
-import { BuildingEntity } from "./entities/Building";
-import { ParticleSystem } from "./systems/ParticleSystem";
-import { useGameStore } from "../store/gameStore";
+import { useEffect, useRef } from 'react'
+import { Application, Assets, Sprite, Texture, TilingSprite } from 'pixi.js'
+import { IsometricMap } from './IsometricMap'
 
-/**
- * GameCanvas — The PixiJS mount point.
- *
- * This component:
- * 1. Creates the PixiJS Application
- * 2. Draws the isometric tile grid
- * 3. Creates agent and building entities
- * 4. Runs the game loop (movement, state transitions)
- * 5. Handles mouse input (click to assign, hover for tooltips)
- * 6. Bridges game events to the Zustand store
- */
-export function GameCanvas() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const appRef = useRef<Application | null>(null);
+/** Build a radial-gradient vignette texture on a 2D canvas. */
+function makeVignetteTexture(w: number, h: number): Texture {
+  const canvas = document.createElement('canvas')
+  canvas.width  = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')!
+  const cx  = w / 2
+  const cy  = h / 2
+  // Radius large enough to darken the corners
+  const r   = Math.sqrt(cx * cx + cy * cy) * 1.1
+  const grad = ctx.createRadialGradient(cx, cy, r * 0.25, cx, cy, r)
+  grad.addColorStop(0,   'rgba(5,15,30,0)')     // transparent — full brightness near center
+  grad.addColorStop(0.5, 'rgba(5,15,30,0.25)')  // slight tint at mid-distance
+  grad.addColorStop(1,   'rgba(3,8,18,0.88)')   // deep dark at the far edges
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, w, h)
+  return Texture.from(canvas)
+}
+
+export default function GameCanvas() {
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current!
+    const app = new Application()
+    let destroyed = false
+    let initialized = false
+    let map: IsometricMap | null = null
 
-    let destroyed = false;
-    const store = useGameStore.getState();
+    app.init({ resizeTo: container, background: '#0a3050' }).then(async () => {
+      if (destroyed) {
+        app.destroy()
+        return
+      }
+      initialized = true
+      container.appendChild(app.canvas)
 
-    async function init() {
-      const app = new Application();
-      await app.init({
-        resizeTo: containerRef.current!,
-        backgroundColor: "#1a1a2e",
-        antialias: true,
-      });
-
-      if (destroyed) { app.destroy(); return; }
-
-      appRef.current = app;
-      containerRef.current!.appendChild(app.canvas);
-
-      const width = app.screen.width;
-      const height = app.screen.height;
-      const offsetX = width / 2;
-      const offsetY = 100;
-
-      // ─── Terrain ───
-      const terrain = createTerrainGrid();
-      const walls = computeWallTiles(store.buildings);
-      const tileGrid = createTileGrid(terrain, offsetX, offsetY);
-      app.stage.addChild(tileGrid);
-
-      // ─── Tile hover highlight ───
-      const highlight = createTileHighlight();
-      app.stage.addChild(highlight);
-
-      // ─── Home marker ───
-      // (Drawn as part of tile grid in Phase 2 — skip for now)
-
-      // ─── Buildings ───
-      const buildingEntities: BuildingEntity[] = store.buildings.map((b) => {
-        const entity = new BuildingEntity(
-          { id: b.id, name: b.name, emoji: b.emoji, tileX: b.tileX, tileY: b.tileY, color: b.color, roofColor: b.roofColor },
-          offsetX, offsetY
-        );
-        app.stage.addChild(entity.container);
-        return entity;
-      });
-
-      // ─── Agent ───
-      const agentDef = store.agents[0];
-      const agentStart = toScreen(agentDef.tileX, agentDef.tileY, offsetX, offsetY);
-      const agent = new AgentEntity(agentDef.id, agentDef.name, agentStart.x, agentStart.y);
-      app.stage.addChild(agent.container);
-
-      // ─── Particles ───
-      const particles = new ParticleSystem();
-      app.stage.addChild(particles.graphics);
-
-      // ─── Movement state ───
-      let path: Array<{ x: number; y: number }> = [];
-      let pathIdx = 0;
-      let agentTileX = agentDef.tileX;
-      let agentTileY = agentDef.tileY;
-      let targetBuilding: (typeof store.buildings)[0] | null = null;
-
-      // ─── Task simulation ───
-      function runSimulatedTask(building: (typeof store.buildings)[0]) {
-        const { addChat, setActiveTask, updateTaskProgress, showNotification, incrementTasksCompleted, addTokensUsed } = useGameStore.getState();
-
-        agent.state = "WORKING";
-        agent.progress = 0;
-        store.updateAgent(agentDef.id, { state: "WORKING" });
-        setActiveTask({ buildingId: building.id, agentId: agentDef.id, progress: 0, startedAt: Date.now() });
-        addChat("command", `> ${building.command} ${building.args.join(" ")}`);
-
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress += 0.15;
-          if (progress >= 1) {
-            clearInterval(interval);
-            agent.progress = 1;
-            updateTaskProgress(1);
-            particles.emit(agent.screenX, agent.screenY - 20, 20, "#FFD700");
-
-            addChat("success", `✅ Task complete: ${building.name}`);
-            showNotification(`${building.name} — Task Complete!`, building.name, building.emoji);
-            incrementTasksCompleted();
-            addTokensUsed(Math.floor(Math.random() * 5000 + 2000));
-
-            setTimeout(() => {
-              setActiveTask(null);
-
-              // Return home
-              const homePath = findPath(agentTileX, agentTileY, agentDef.homeTileX, agentDef.homeTileY, walls);
-              if (homePath && homePath.length > 1) {
-                path = homePath;
-                pathIdx = 1;
-                agent.state = "RETURNING";
-                store.updateAgent(agentDef.id, { state: "RETURNING" });
-              } else {
-                agent.state = "IDLE";
-                store.updateAgent(agentDef.id, { state: "IDLE" });
-                useGameStore.getState().addChat("system", "Merlin has returned home");
-              }
-              targetBuilding = null;
-            }, 500);
-          } else {
-            agent.progress = progress;
-            updateTaskProgress(progress);
-            addChat("output", `  Processing... ${Math.floor(progress * 100)}%`);
-          }
-        }, 600);
+      // ── Animated ocean background ──────────────────────────────────────
+      const waterTextures = await Promise.all(
+        Array.from({ length: 8 }, (_, i) =>
+          Assets.load<Texture>(`/assets/tiles/Water animation${i + 1}.png`)
+        )
+      )
+      for (const tex of waterTextures) {
+        tex.source.scaleMode = 'nearest'
       }
 
-      // ─── Mouse: Click ───
-      app.canvas.addEventListener("click", (e: MouseEvent) => {
-        if (agent.state !== "IDLE") return;
+      const ocean = new TilingSprite({
+        texture: waterTextures[0],
+        width:   app.screen.width,
+        height:  app.screen.height,
+      })
+      ocean.eventMode = 'none'
+      app.stage.addChild(ocean)
 
-        const rect = app.canvas.getBoundingClientRect();
-        const scaleX = app.screen.width / rect.width;
-        const scaleY = app.screen.height / rect.height;
-        const mx = (e.clientX - rect.left) * scaleX;
-        const my = (e.clientY - rect.top) * scaleY;
+      // ── Radial vignette — bright near grid, dark at screen edges ──────
+      const vignette = new Sprite(makeVignetteTexture(app.screen.width, app.screen.height))
+      vignette.eventMode = 'none'
+      app.stage.addChild(vignette)
 
-        for (const be of buildingEntities) {
-          if (be.hitTest(mx, my)) {
-            const building = store.buildings.find((b) => b.id === be.config.id)!;
-            const foundPath = findPath(agentTileX, agentTileY, building.doorTileX, building.doorTileY, walls);
-            if (foundPath && foundPath.length > 1) {
-              path = foundPath;
-              pathIdx = 1;
-              agent.state = "WALKING";
-              store.updateAgent(agentDef.id, { state: "WALKING" });
-              targetBuilding = building;
-              useGameStore.getState().addChat("action", `Sending ${agentDef.name} to ${building.name}...`);
-            }
-            return;
-          }
-        }
-      });
+      // ── Isometric map on top ───────────────────────────────────────────
+      map = new IsometricMap()
+      await map.init(app)
+      app.stage.addChild(map.container)
+      // Overlay (agent roster etc.) sits above the map and is not affected by pan/zoom
+      app.stage.addChild(map.overlayContainer)
 
-      // ─── Mouse: Hover ───
-      app.canvas.addEventListener("mousemove", (e: MouseEvent) => {
-        const rect = app.canvas.getBoundingClientRect();
-        const scaleX = app.screen.width / rect.width;
-        const scaleY = app.screen.height / rect.height;
-        const mx = (e.clientX - rect.left) * scaleX;
-        const my = (e.clientY - rect.top) * scaleY;
-
-        let anyHovered = false;
-        for (const be of buildingEntities) {
-          const hovered = be.hitTest(mx, my);
-          be.isHovered = hovered;
-          if (hovered) anyHovered = true;
+      // ── Per-frame updates ──────────────────────────────────────────────
+      let waterFrame = 0
+      let frameTimer = 0
+      app.ticker.add((ticker) => {
+        // Keep ocean + vignette filling the canvas after any resize
+        const sw = app.screen.width
+        const sh = app.screen.height
+        if (ocean.width !== sw || ocean.height !== sh) {
+          ocean.width      = sw
+          ocean.height     = sh
+          vignette.texture = makeVignetteTexture(sw, sh)
+          vignette.width   = sw
+          vignette.height  = sh
         }
 
-        app.canvas.style.cursor = anyHovered && agent.state === "IDLE" ? "pointer" : "default";
-      });
-
-      // ─── Game Loop ───
-      app.ticker.add(() => {
-        // Movement
-        if ((agent.state === "WALKING" || agent.state === "RETURNING") && path.length > 0) {
-          const targetTile = path[pathIdx];
-          if (targetTile) {
-            const targetScreen = toScreen(targetTile.x, targetTile.y, offsetX, offsetY);
-            const arrived = agent.moveToward(targetScreen.x, targetScreen.y, AGENT_SPEED);
-            if (arrived) {
-              agentTileX = targetTile.x;
-              agentTileY = targetTile.y;
-              store.updateAgent(agentDef.id, { tileX: targetTile.x, tileY: targetTile.y });
-              pathIdx++;
-
-              if (pathIdx >= path.length) {
-                path = [];
-                if (agent.state === "WALKING" && targetBuilding) {
-                  const activeBE = buildingEntities.find((be) => be.config.id === targetBuilding!.id);
-                  if (activeBE) activeBE.isActive = true;
-                  runSimulatedTask(targetBuilding);
-                } else if (agent.state === "RETURNING") {
-                  agent.state = "IDLE";
-                  store.updateAgent(agentDef.id, { state: "IDLE" });
-                  useGameStore.getState().addChat("system", `${agentDef.name} has returned home`);
-                  for (const be of buildingEntities) be.isActive = false;
-                }
-              }
-            }
-          }
+        // Cycle water frames (~8 fps)
+        frameTimer += ticker.deltaTime
+        if (frameTimer >= 7) {
+          frameTimer = 0
+          waterFrame        = (waterFrame + 1) % waterTextures.length
+          ocean.texture     = waterTextures[waterFrame]
         }
 
-        // Update entities
-        agent.update();
-        for (const be of buildingEntities) be.update();
-        particles.update();
-      });
-    }
+        // Slow diagonal drift for ocean movement
+        ocean.tilePosition.x += 0.3
+        ocean.tilePosition.y += 0.15
 
-    init();
+        map!.update()
+      })
+    })
 
     return () => {
-      destroyed = true;
-      if (appRef.current) {
-        appRef.current.destroy(true, { children: true });
-        appRef.current = null;
+      destroyed = true
+      map?.destroy()
+      if (initialized) {
+        app.destroy(true)
       }
-    };
-  }, []);
+    }
+  }, [])
 
-  return (
-    <div
-      ref={containerRef}
-      style={{
-        position: "absolute",
-        inset: 0,
-        zIndex: 0,
-      }}
-    />
-  );
+  return <div ref={containerRef} style={{ width: '100%', height: '100vh' }} />
 }

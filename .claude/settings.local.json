@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Notion__notion-search",
+      "mcp__claude_ai_Notion__notion-fetch",
+      "Bash(python3 *)",
+      "Bash(python *)",
+      "PowerShell(Get-Content *)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}
